@@ -1,0 +1,76 @@
+# PhishGuard reverse proxy (Caddy) -- Caddy alternative to deploy/nginx-phisguard.conf.example
+#
+# EXAMPLE / TEMPLATE. Placeholders are marked <...>.
+#
+# NOT VALIDATED: no Caddy binary was available on the machine where this file was
+# written, so `caddy validate` was never run. Run it before reloading:
+#     caddy validate --config deploy/Caddyfile.example
+#
+# WHY NGINX IS THE PRIMARY EXAMPLE
+#   Caddy has no built-in rate limiter. A SHARED limit requires the third-party
+#   `caddy-ratelimit` module and a custom build, e.g.
+#       xcaddy build --with github.com/mholt/caddy-ratelimit
+#   The nginx example provides TLS + body cap + shared rate limit with stock
+#   packages, so it is the recommended path for this project. Caddy is offered
+#   here because it obtains and renews TLS certificates automatically, which
+#   removes the certificate handling from the nginx example.
+#
+# NOT PROVIDED: authentication. /api/history is unauthenticated in the app; see
+# the basicauth note below and deploy/README.md ("History access").
+
+phisguard.example.com {   # <-- placeholder domain; DNS must point at this host
+
+	encode zstd gzip
+
+	# Automatic HTTPS: Caddy obtains and renews certificates for the domain
+	# above. No certificate paths to manage. Ports 80 and 443 must be reachable.
+
+	# Request-body cap. Must be EQUAL TO OR SMALLER THAN
+	# PHISHGUARD_MAX_REQUEST_BODY_BYTES (default 16384 bytes).
+	request_body {
+		max_size 16KB
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		Strict-Transport-Security "max-age=31536000"
+	}
+
+	# --- API ---------------------------------------------------------------- #
+	handle /api/* {
+		# NO AUTHENTICATION IS CONFIGURED. Keep the service on a private
+		# network/VPN, or protect it here (the app has none). Caddy's basicauth
+		# needs a bcrypt hash from `caddy hash-password`:
+		#
+		# basicauth /api/history/* {
+		# 	analyst $2a$14$<bcrypt-hash-from-caddy-hash-password>
+		# }
+
+		# Shared rate limiting is NOT built in. Uncomment ONLY if Caddy was built
+		# with the caddy-ratelimit module:
+		#
+		# rate_limit {
+		# 	zone phisguard_api {
+		# 		key {remote_host}
+		# 		events 60
+		# 		window 1m
+		# 	}
+		# }
+
+		reverse_proxy 127.0.0.1:8000 {
+			# Explicit trusted-proxy handling: Caddy sets these from the real
+			# peer. uvicorn only honours them because the service unit passes
+			# --forwarded-allow-ips=127.0.0.1 and binds to loopback, so the
+			# headers can only have come from this proxy.
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# --- Static frontend (same origin, so the frontend can use relative /api/) #
+	handle {
+		root * /var/www/phisguard    # <-- placeholder web root (frontend/dist)
+		file_server
+		try_files {path} /index.html
+	}
+}

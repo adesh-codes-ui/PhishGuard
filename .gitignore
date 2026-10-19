@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+*.db
+*.sqlite3
+*.db-wal
+*.db-shm
+*.db.json
+.env
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Offline evaluation datasets (downloaded/imported - never commit)
+backend/eval/data/
+eval/data/
+
+# Local database backups (never commit: they contain analyzed URLs)
+backups/
+
+# Environment files and secrets
+.env*
+!.env.example
+**/.env*
+!**/.env.example

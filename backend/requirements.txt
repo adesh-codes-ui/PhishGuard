@@ -1,0 +1,30 @@
+# PhishGuard backend dependencies.
+#
+# Verified together in backend/.venv (Python 3.12.10):
+#   fastapi 0.143.3 · starlette 1.8.0 · httpx 0.28.1 · pydantic 2.14.1
+#   pydantic-settings 2.16.0 · uvicorn 0.54.0 · publicsuffixlist 1.1.0 · pytest 8.4.2
+# Compatibility notes:
+#   - fastapi 0.143.x requires starlette>=0.46.0 and pydantic>=2.9.0; starlette is
+#     pinned here to the tested <2.0 major line.
+#   - httpx>=0.28 must NOT be paired with starlette<0.37 (that TestClient passes the
+#     `app=` kwarg httpx removed in 0.28). fastapi>=0.115 rules that starlette out.
+
+# Web framework / ASGI
+fastapi>=0.115,<1.0
+starlette>=1.8,<2.0
+uvicorn[standard]>=0.30,<1.0
+
+# Settings and models
+pydantic>=2.7,<3.0
+pydantic-settings>=2.3,<3.0
+python-dotenv>=1.0,<2.0
+
+# Public-suffix parsing for registrable-domain checks.
+publicsuffixlist>=1.0,<2.0
+
+# Runtime HTTP client for the optional VirusTotal lookup; also required by the
+# starlette TestClient used in the API tests.
+httpx>=0.27,<1.0
+
+# Test-only dependencies
+pytest>=8.2,<9.0

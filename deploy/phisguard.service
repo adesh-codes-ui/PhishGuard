@@ -1,0 +1,90 @@
+# PhishGuard API service (single worker).
+#
+# EXAMPLE / TEMPLATE. Placeholders are marked <...>. Review every line before
+# use. This unit was NOT validated with `systemd-analyze` (not available on the
+# machine where it was written) -- see deploy/README.md.
+#
+# Install:
+#   sudo cp deploy/phisguard.service /etc/systemd/system/phisguard.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now phisguard
+#
+# One process, one worker, one SQLite file. Do NOT raise --workers: the built-in
+# rate limiter is per process, and SQLite is a single-writer store.
+
+[Unit]
+Description=PhishGuard API (FastAPI/uvicorn, single worker)
+Documentation=file:///opt/phisguard/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Type=exec requires systemd 240+ (2018). Use Type=simple on older systems.
+Type=exec
+User=phisguard
+Group=phisguard
+WorkingDirectory=/opt/phisguard/backend
+
+# Configuration lives outside the code checkout, owned by root, group-owned by
+# the service group and NOT world-readable
+# (`sudo install -o root -g phisguard -m 640 <template> /etc/phisguard/phishguard.env`,
+# matching deploy/phishguard.env.example). It sets PHISHGUARD_DATABASE_PATH and,
+# if used, VIRUSTOTAL_API_KEY.
+EnvironmentFile=/etc/phisguard/phishguard.env
+
+# StateDirectory requires systemd 235+: systemd creates /var/lib/phisguard,
+# owned by User/Group above and writable by the service even under
+# ProtectSystem=strict. Set PHISHGUARD_DATABASE_PATH=/var/lib/phisguard/phisguard.db
+# in the env file so the database lives on a persistent volume. Back this
+# directory up; see backend/ops/README.md.
+StateDirectory=phisguard
+# 0700 instead of systemd's 0755 default: this directory holds the SQLite file,
+# which contains every URL anyone has analyzed. A world-readable state directory
+# would let any local user list and read that history.
+StateDirectoryMode=0700
+
+# Bind to loopback ONLY. The reverse proxy terminates TLS and is the only thing
+# that should reach this port. Never bind 0.0.0.0 without a proxy in front: the
+# API has no authentication of its own.
+#
+# --proxy-headers / --forwarded-allow-ips=127.0.0.1 is the EXPLICIT trusted-proxy
+# configuration: uvicorn will honour X-Forwarded-* only from the loopback
+# address, which (because of the bind above) can only be the local proxy. Remove
+# these two flags if no proxy overwrites those headers. Note that PhishGuard
+# itself never uses X-Forwarded-For for rate limiting; this only affects
+# uvicorn's access log and scheme detection.
+ExecStart=/opt/phisguard/backend/.venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --workers 1 \
+    --proxy-headers \
+    --forwarded-allow-ips=127.0.0.1
+
+Restart=on-failure
+RestartSec=5
+# uvicorn handles SIGTERM as a graceful shutdown; give in-flight requests time.
+TimeoutStopSec=30
+
+# Modest hardening. Reviewed, not exercised on a live host.
+# UMask (systemd 240+) overrides systemd's default 0022, under which the
+# database file would be created world-readable. 0077 pairs with
+# StateDirectoryMode=0700 above.
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+
+# Health check (also what an uptime monitor / load balancer should call):
+#   curl -fsS http://127.0.0.1:8000/api/health
+# There is no ExecStartPost gate: the API has no separate readiness state, and
+# /api/health performs a COUNT(*) so it is not free. Do not expose it publicly.
+
+[Install]
+WantedBy=multi-user.target

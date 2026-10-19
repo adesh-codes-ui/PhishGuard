@@ -1,0 +1,14 @@
+# Synthetic fixture set (NOT verified live phishing URLs). 
+# Intent: offline evaluation of the heuristic rules only.
+{"url": "https://www.example.com/", "label": "legit"}
+{"url": "https://example.co.uk/", "label": "legit"}
+{"url": "https://github.com/", "label": "legit"}
+{"url": "https://paypal.com.secure-login.example.net/", "label": "suspicious"}
+{"url": "http://192.168.0.1/", "label": "suspicious"}
+{"url": "https://paypal.com.evil.net/", "label": "suspicious"}
+{"url": "https://appleid.evil.com/", "label": "suspicious"}
+{"url": "http://2130706433/", "label": "suspicious"}
+{"url": "https://groups.com/", "label": "legit"}
+{"url": "https://purchase.example.com/", "label": "legit"}
+{"url": "https://example.com/redirect?url=https://evil.com", "label": "legit"}
+{"url": "http://user:pass@evil.com/phish", "label": "suspicious"}

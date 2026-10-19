@@ -1,0 +1,38 @@
+@import 'tailwindcss';
+
+/* Test files are not part of the application, so they must not influence the
+   production stylesheet. Tailwind's automatic content detection scans every
+   source file and generates a utility for any identifier that happens to look
+   like a class name — a `container` variable in a test, for example, would add
+   the whole `.container` utility to the shipped CSS. */
+@source not '**/*.test.ts';
+@source not '**/*.test.tsx';
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: #020617; /* slate-950 */
+  color: #e2e8f0; /* slate-200 */
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Subtle animated spinner used by loading states. */
+@keyframes pg-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -1,0 +1,130 @@
+# PhishGuard reverse proxy (nginx) -- TLS termination, body cap, shared rate limit.
+#
+# EXAMPLE / TEMPLATE. Placeholders are marked <...>.
+#
+# NOT VALIDATED: no nginx binary was available on the machine where this file was
+# written, so `nginx -t` was never run against it. It is a reviewed starting
+# point, not a tested artifact -- run `sudo nginx -t` before reloading.
+#
+# INSTALLATION CONTEXT
+#   `limit_req_zone` is only valid in the http context, so this file is written
+#   as an include for the http block rather than a standalone nginx.conf:
+#       sudo cp deploy/nginx-phisguard.conf.example /etc/nginx/conf.d/phisguard.conf
+#       sudo nginx -t && sudo systemctl reload nginx
+#
+# WHAT IS PROVIDED VS LACKING
+#   * TLS termination with the app bound to loopback (see deploy/phisguard.service)
+#   * HTTP -> HTTPS redirect
+#   * request-body cap
+#   * a SHARED rate limit (shared across nginx workers, unlike the app's
+#     per-process in-memory limiter, which is off by default)
+#   * explicit trusted-proxy header handling
+#   * serving the built frontend from the same origin (so the frontend can use
+#     relative /api/... URLs -- see frontend/.env.example)
+#   There is NO authentication here. See "History access" below.
+
+# 60 requests/minute per client IP, shared by every nginx worker.
+# Tune `rate`/`burst` to real traffic. The app's own limiter (if ever enabled)
+# is per process and cannot see this.
+limit_req_zone $binary_remote_addr zone=phisguard_api:10m rate=60r/m;
+
+# Redirect all plaintext traffic to HTTPS.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name phisguard.example.com;   # <-- placeholder domain
+
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    # `http2 on;` requires nginx >= 1.25.1. On older versions use:
+    #     listen 443 ssl http2;
+    http2 on;
+    server_name phisguard.example.com;   # <-- placeholder domain
+
+    # Certificates for the REAL domain. Obtain them from a CA (e.g. certbot):
+    #   sudo certbot --nginx -d phisguard.example.com
+    # Uncomment and adjust once certificates exist; nginx will not start if the
+    # referenced files are missing.
+    # ssl_certificate     /etc/letsencrypt/live/phisguard.example.com/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/phisguard.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:phisguard_tls:10m;
+    ssl_session_timeout 1d;
+
+    # Request-body cap. Must be EQUAL TO OR SMALLER THAN
+    # PHISHGUARD_MAX_REQUEST_BODY_BYTES (default 16384 bytes, i.e. "16k" in
+    # nginx's 1024-byte units). The application enforces the same limit again,
+    # so this only spares the app the work of reading an oversized request.
+    client_max_body_size 16k;
+    client_body_timeout 10s;
+
+    # Same-origin static frontend: `cd frontend && npm run build` produces dist/.
+    root /var/www/phisguard;             # <-- placeholder web root
+    index index.html;
+
+    location /api/ {
+        # Shared limiter. `burst` absorbs short spikes; `nodelay` rejects
+        # instead of queueing once the burst is exhausted.
+        limit_req zone=phisguard_api burst=20 nodelay;
+        limit_req_status 429;
+
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        # Overwrite (never blindly forward) the forwarded headers. PhishGuard
+        # does not trust X-Forwarded-For for rate limiting; uvicorn only honours
+        # these because the unit passes --forwarded-allow-ips=127.0.0.1 and
+        # binds to loopback, so the header can only have come from this proxy.
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+
+        # Must exceed PHISHGUARD_VIRUSTOTAL_TIMEOUT_SECONDS (default 10s): a
+        # VirusTotal lookup, when enabled, runs synchronously inside
+        # POST /api/analyze.
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    # --- History access: NOT authenticated ---------------------------------- #
+    # GET /api/history lists every URL anyone has analyzed on this instance, and
+    # GET /api/history/{id} returns the details. The application has NO
+    # authentication. Exposing this API to the public internet publishes that
+    # data. Choose one:
+    #
+    #   1. Keep the whole service off the public internet (private network/VPN);
+    #      simplest and the current recommendation.
+    #   2. Require authentication HERE, at the proxy, e.g. with a password file
+    #      created by `sudo htpasswd -c /etc/nginx/phisguard.htpasswd analyst`:
+    #
+    # location /api/history {
+    #     auth_basic "PhishGuard";
+    #     auth_basic_user_file /etc/nginx/phisguard.htpasswd;
+    #     limit_req zone=phisguard_api burst=20 nodelay;
+    #     proxy_pass http://127.0.0.1:8000;
+    #     proxy_set_header Host $host;
+    #     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #     proxy_set_header X-Forwarded-Proto $scheme;
+    # }
+    #
+    # Note /api/history and /api/history/{id} are distinct locations in nginx:
+    # to protect both, match the prefix with a regex or wrap them in a single
+    # `location ~ ^/api/history(/|$)` block.
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # The app already sends X-Content-Type-Options; these add browser-side
+    # protections for the static frontend.
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+}
