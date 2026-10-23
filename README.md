@@ -1,16 +1,16 @@
-# PhishGuard 🛡️
+# PhishGuard 
 
-A phishing-URL detection web application with an **explainable** 0–100 risk
+A phishing-URL detection web application with an  0–100 risk
 score. Paste a URL and PhishGuard inspects the URL *string* for common phishing
-signals. It **never visits, resolves, or fetches** the submitted link.
+signals. It never visits, resolves, or fetches the submitted link.
 
-> ⚠️ **Not a safety guarantee.** PhishGuard uses static heuristics. A low score
-> means "no known red flags were found", **not** "this link is safe". Always
+> Not a safety guarantee. PhishGuard uses static heuristics. A low score
+> means "no known red flags were found",  "this link is safe". Always
 > verify a site through official channels before entering credentials.
 
-## Scope: local-only demo
 
-PhishGuard is a **local college project and demo**. It is designed to run on a
+
+PhishGuard is a local college project and demo. It is designed to run on a
 single machine for a single user, bound to the loopback interface:
 
 - The backend command in [1. Run the backend](#1-run-the-backend) passes
